@@ -1,0 +1,9 @@
+{
+  "products": [
+    {
+      "name": "Test Alert",
+      "url": "https://example-store.com/product/151",
+      "checkInterval": 5
+    }
+  ]
+}
