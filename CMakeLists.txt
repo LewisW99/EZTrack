@@ -1,11 +1,17 @@
 cmake_minimum_required(VERSION 3.16)
 
-project(EZTracker)
+project(EZTrack)
 
 set(CMAKE_CXX_STANDARD 17)
 
-file(GLOB_RECURSE SOURCES
-    src/*.cpp
+add_executable(tracker
+    src/main.cpp
+    src/tracker/ProductWatcher.cpp
+    src/http/HttpClient.cpp
+    src/notifications/NotificationManager.cpp
 )
 
-add_executable(tracker ${SOURCES})
+# Put executables directly in build/
+set_target_properties(tracker PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}
+)

@@ -1,9 +1,9 @@
 {
   "products": [
     {
-      "name": "Test Alert",
-      "url": "https://example-store.com/product/151",
-      "checkInterval": 5
+      "name": "Mega Evolution ETB",
+      "url": "https://www.pokemoncenter.com/en-gb/product/10-10315-108/pokemon-tcg-mega-evolution-ascended-heroes-pokemon-center-elite-trainer-box",
+      "checkInterval": 20
     }
   ]
 }

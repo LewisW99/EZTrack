@@ -2,6 +2,8 @@
 build/
 out/
 bin/
+logs/
+status/
 
 # CMake generated files
 CMakeCache.txt

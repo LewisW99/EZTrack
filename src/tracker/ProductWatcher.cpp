@@ -1,52 +1,141 @@
 #include "ProductWatcher.h"
+#include "Product.h"
+
+#include <filesystem>
 #include <iostream>
 #include <thread>
 #include <chrono>
 #include <ctime>
-
-#include"../http/HttpClient.h"
+#include <fstream>
+#include <vector>
+#include "../http/HttpClient.h"
 #include "../notifications/NotificationManager.h"
+
+#include "../../external/json.hpp"
+
+using json = nlohmann::json;
+
+
+   void WriteStatus(const std::vector<Product>& products, const std::vector<bool>& states)
+{
+    using json = nlohmann::json;
+
+    json status;
+    status["products"] = json::array();
+
+    auto now = std::time(nullptr);
+
+    for (size_t i = 0; i < products.size(); i++)
+    {
+        json entry;
+
+        entry["name"] = products[i].name;
+        entry["inStock"] = states[i];
+        entry["lastChecked"] = now;
+
+        status["products"].push_back(entry);
+    }
+
+    std::ofstream file("status/status.json");
+    file << status.dump(4);
+}
 
 void ProductWatcher::Start()
 {
-    std::cout << "Tracker running..." << std::endl;
 
-    bool lastStockState = false;
+    std::filesystem::create_directories("status");
+    std::filesystem::create_directories("logs");
+    
+    std::ofstream logFile("logs/tracker.log", std::ios::app);
+
+    logFile  << "Tracker running..." << std::endl;
+
+    
+    /*
+    Load product configuration
+    */
+
+    std::ifstream configFile("config/products.json");
+
+    if (!configFile.is_open())
+    {
+        logFile << "Failed to open products.json" << std::endl;
+        return;
+    }
+
+    json data;
+    configFile >> data;
+
+    std::vector<Product> products;
+
+    for (auto& item : data["products"])
+    {
+        Product p;
+        p.name = item["name"];
+        p.url = item["url"];
+        p.interval = item["checkInterval"];
+
+        products.push_back(p);
+    }
+
+    logFile << "Loaded " << products.size() << " products" << std::endl;
+
+    /*
+    Track stock state per product
+    */
+
+    std::vector<bool> lastStockStates(products.size(), false);
 
     while (true)
     {
         auto now = std::time(nullptr);
 
-        std::cout << std::ctime(&now) << "Checking product stock..." << std::endl;
+        logFile << std::ctime(&now) << "Checking product stock..." << std::endl;
 
-        bool inStock = false;
-
-        std::string html = HttpClient::Get("https://www.pokemoncenter.com/en-gb/product/10-10315-108/pokemon-tcg-mega-evolution-ascended-heroes-pokemon-center-elite-trainer-box");
-        std::cout << "HTML size: " << html.size() << std::endl;
-        /*
-        Simple detection logic.
-
-        Pokemon Center typically shows:
-        "Out of stock"
-        when unavailable.
-        */
-
-        if(html.find("Out of stock") == std::string::npos)
+        for (size_t i = 0; i < products.size(); i++)
         {
-            inStock = true;
+            auto& product = products[i];
+
+            logFile << "Checking: " << product.name << std::endl;
+
+            bool inStock = false;
+
+            std::string html = HttpClient::Get(product.url);
+
+            logFile << "HTML size: " << html.size() << std::endl;
+
+            /*
+            Pokemon Center typically shows:
+            "Out of stock"
+            when unavailable.
+            */
+
+            if (html.find("Out of stock") == std::string::npos)
+            {
+                inStock = true;
+            }
+
+            /*
+            Alert if stock changed
+            */
+
+            if (inStock && !lastStockStates[i])
+            {
+                NotificationManager::SendStockAlert(product.name);
+            }
+
+            lastStockStates[i] = inStock;
         }
+
+        WriteStatus(products, lastStockStates);
+
         /*
-        TODO (NEXT STEP):
-        Replace this with real HTTP request + HTML parsing.
+        Wait before next check
         */
-
-        if (inStock && !lastStockState)
-        {
-            NotificationManager::SendStockAlert("Test Alert");
-        }
-
-        lastStockState = inStock;
 
         std::this_thread::sleep_for(std::chrono::seconds(30));
     }
+
+
+ 
 }
