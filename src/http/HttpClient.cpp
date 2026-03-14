@@ -10,7 +10,7 @@ std::string HttpClient::Get(const std::string& url)
     std::array<char, 4096> buffer;
     std::string result;
 
-    FILE* pipe = _popen(command.c_str(), "r");
+    FILE* pipe = popen(command.c_str(), "r");
 
     if (!pipe)
     {
@@ -23,7 +23,7 @@ std::string HttpClient::Get(const std::string& url)
         result += buffer.data();
     }
 
-    _pclose(pipe);
+    pclose(pipe);
 
     return result;
 }
