@@ -4,6 +4,11 @@
       "name": "Mega Evolution ETB",
       "url": "https://www.pokemoncenter.com/en-gb/product/10-10315-108/pokemon-tcg-mega-evolution-ascended-heroes-pokemon-center-elite-trainer-box",
       "checkInterval": 20
+    },
+    {
+      "name": "Prismatic Bundle",
+      "url": "https://www.pokemoncenter.com/en-gb/product/10-10025-101/pokemon-tcg-scarlet-and-violet-prismatic-evolutions-booster-bundle-6-packs",
+      "checkInterval": 20
     }
   ]
 }

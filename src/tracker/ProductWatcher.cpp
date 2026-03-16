@@ -1,6 +1,8 @@
 #include "ProductWatcher.h"
 #include "Product.h"
 #include "StockDetector.h"
+#include "../database/Database.h"
+#include "../core/WorkerPool.h"
 
 #include <atomic>
 #include <chrono>
@@ -23,6 +25,7 @@ using json = nlohmann::json;
 namespace
 {
     std::atomic<bool> g_shouldStop = false;
+
     std::filesystem::path g_logsPath = "logs";
     std::filesystem::path g_statusPath = "status";
     std::filesystem::path g_debugPath = "debug";
@@ -38,6 +41,7 @@ namespace
             return "";
 
         std::tm localTime{};
+
 #if defined(_WIN32)
         localtime_s(&localTime, &value);
 #else
@@ -46,6 +50,7 @@ namespace
 
         std::ostringstream stream;
         stream << std::put_time(&localTime, "%Y-%m-%d %H:%M:%S");
+
         return stream.str();
     }
 
@@ -135,7 +140,7 @@ namespace
         file << status.dump(4);
     }
 
-    DetectionResult CheckProduct(Product& product, Logger& logger)
+    DetectionResult CheckProduct(Product& product, Logger& logger, Database& db)
     {
         logger.Info("Checking '" + product.name + "'");
 
@@ -150,7 +155,7 @@ namespace
         product.lastStatus = detection.statusText;
 
         logger.Info("HTTP " + std::to_string(response.statusCode) +
-                    ", body bytes=" + std::to_string(response.body.size()));
+            ", body bytes=" + std::to_string(response.body.size()));
 
         logger.Info("Detection: " + detection.statusText + " (" + detection.reason + ")");
 
@@ -171,6 +176,14 @@ namespace
             product.hasKnownState = true;
         }
 
+        db.RecordCheck(
+            product.name,
+            product.url,
+            detection.statusText,
+            response.statusCode,
+            detection.reason
+        );
+
         return detection;
     }
 }
@@ -187,6 +200,15 @@ void ProductWatcher::Start()
 
     logger.Info("Tracker starting");
 
+    Database db("tracker.db");
+
+    if (!db.Init())
+    {
+        logger.Error("Failed to initialise SQLite database");
+    }
+
+    WorkerPool pool(4);
+
     std::vector<Product> products;
 
     if (!LoadProducts("config/products.json", products, logger))
@@ -199,40 +221,53 @@ void ProductWatcher::Start()
     while (!g_shouldStop)
     {
         auto now = std::chrono::steady_clock::now();
-
-        bool checkedAnything = false;
+        bool scheduledAnything = false;
 
         for (auto& product : products)
         {
             if (now < product.nextCheckAt)
                 continue;
 
-            DetectionResult detection = CheckProduct(product, logger);
+            scheduledAnything = true;
 
-            auto nowTime = std::chrono::steady_clock::now();
-
-            if (detection.state == StockState::Blocked)
+            pool.Enqueue([&product, &logger, &db]()
             {
-                logger.Warn("Site blocked request for '" + product.name +
-                            "' - backing off for 10 minutes");
+                DetectionResult detection = CheckProduct(product, logger, db);
 
-                product.nextCheckAt = nowTime + std::chrono::minutes(10);
-            }
-            else
-            {
-                product.nextCheckAt =
-                    nowTime + std::chrono::seconds(product.checkIntervalSeconds);
-            }
+                auto nowTime = std::chrono::steady_clock::now();
 
-            checkedAnything = true;
+                if (detection.state == StockState::Blocked)
+                {
+                    logger.Warn("Site blocked request for '" + product.name + "' - backing off for 10 minutes");
+
+                    product.nextCheckAt = nowTime + std::chrono::minutes(10);
+                }
+                else
+                {
+                    product.nextCheckAt =
+                        nowTime + std::chrono::seconds(product.checkIntervalSeconds);
+                }
+            });
         }
 
-        if (checkedAnything)
+        if (scheduledAnything)
             WriteStatus(products);
 
-        std::this_thread::sleep_for(std::chrono::milliseconds(250));
+        auto nextWake = std::chrono::steady_clock::time_point::max();
+
+        for (const auto& product : products)
+        {
+            if (product.nextCheckAt < nextWake)
+                nextWake = product.nextCheckAt;
+        }
+
+        auto nowTime = std::chrono::steady_clock::now();
+
+        if (nextWake > nowTime)
+            std::this_thread::sleep_for(nextWake - nowTime);
     }
 
     logger.Info("Tracker stopping cleanly");
+
     WriteStatus(products);
 }

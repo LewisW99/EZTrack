@@ -4,6 +4,9 @@ out/
 bin/
 logs/
 status/
+ALL_BUILD.dir/
+ZERO_CHECK.dir/
+tracker.dir/
 
 # CMake generated files
 CMakeCache.txt
@@ -17,7 +20,8 @@ Makefile
 *.sln
 *.filters
 *.user
-
+*.db
+.slnx
 # Compiled binaries
 *.exe
 *.dll
