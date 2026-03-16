@@ -1,6 +1,7 @@
 #include "Database.h"
 #include <iostream>
 
+
 Database::Database(const std::string& path)
 {
     if (sqlite3_open(path.c_str(), &db) != SQLITE_OK)
@@ -146,4 +147,32 @@ void Database::RecordCheck(
 
     sqlite3_step(stmt);
     sqlite3_finalize(stmt);
+}
+
+std::vector<Product> Database::GetProducts()
+{
+	std::vector<Product> products;
+	const char* query = "SELECT id, name, url FROM products;";
+	
+	sqlite3_stmt* stmt;
+	
+	if(sqlite3_prepare_v2(db, query, -1, &stmt, nullptr) != SQLITE_OK)
+	{
+		return products;
+	}
+	
+	while (sqlite3_step(stmt) == SQLITE_ROW)
+	{
+		Product p;
+		
+		p.id = sqlite3_column_int(stmt, 0);
+		p.name = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
+		p.url = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 2));
+		
+		products.push_back(p);
+	}
+	
+	sqlite3_finalize(stmt);
+	
+	return products;
 }

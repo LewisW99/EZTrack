@@ -30,7 +30,12 @@ target_sources(tracker PRIVATE
 
     src/database/Database.cpp
 
+    src/api/HttpServer.cpp
+    
+    src/api/ApiRoutes.cpp
+
     external/sqlite/sqlite3.c
+	
 )
 
 # ------------------------------------------------

@@ -1,8 +1,9 @@
 #pragma once
-
+#include "../tracker/Product.h"
 #include <string>
 #include <sqlite3.h>
 #include <mutex>
+#include <vector>
 class Database
 {
 public:
@@ -19,6 +20,8 @@ public:
         long httpStatus,
         const std::string& reason
     );
+    
+    std::vector<Product> GetProducts();
 
 private:
 

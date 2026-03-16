@@ -1,4 +1,5 @@
 #include "HttpClient.h"
+#include <cstring>
 #include <cstdio>
 #include <array>
 

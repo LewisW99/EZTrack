@@ -5,6 +5,7 @@
 
 struct Product
 {
+	int id = -1;
     std::string name;
     std::string url;
     int checkIntervalSeconds = 30;
