@@ -20,7 +20,7 @@ target_sources(tracker PRIVATE
     src/main.cpp
 
     src/core/Logger.cpp
-
+    src/core/WorkerPool.cpp
     src/http/HttpClient.cpp
 
     src/tracker/ProductWatcher.cpp
