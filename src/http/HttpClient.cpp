@@ -1,6 +1,5 @@
 #include "HttpClient.h"
 #include <cstdio>
-#include <iostream>
 #include <array>
 
 namespace
@@ -8,13 +7,15 @@ namespace
     constexpr const char* kStatusMarker = "EZTRACK_HTTP_STATUS:";
 }
 
-
 HttpResponse HttpClient::Get(const std::string& url)
 {
     HttpResponse response;
 
     const std::string command =
         "curl -L -s --max-time 20 --connect-timeout 10 "
+        "-H \"Accept: text/html\" "
+        "-H \"Accept-Language: en-GB,en;q=0.9\" "
+        "-H \"Connection: keep-alive\" "
         "-A \"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
         "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36\" "
         "-w \"\\n" + std::string(kStatusMarker) + "%{http_code}\" \"" + url + "\"";
@@ -30,28 +31,28 @@ HttpResponse HttpClient::Get(const std::string& url)
 
     if (!pipe)
     {
-        response.errorMessage = "Failed to start curl process";
+        response.errorMessage = "Failed to start curl";
         return response;
     }
 
-    while (fgets(buffer.data(), static_cast<int>(buffer.size()), pipe) != nullptr)
+    while (fgets(buffer.data(), buffer.size(), pipe) != nullptr)
         output += buffer.data();
 
 #if defined(_WIN32)
-    const int exitCode = _pclose(pipe);
+    int exitCode = _pclose(pipe);
 #else
-    const int exitCode = pclose(pipe);
+    int exitCode = pclose(pipe);
 #endif
 
-    const std::size_t markerPos = output.rfind(kStatusMarker);
+    const size_t markerPos = output.rfind(kStatusMarker);
+
     if (markerPos != std::string::npos)
     {
-        const std::size_t statusStart = markerPos + std::string(kStatusMarker).size();
-        const std::string statusText = output.substr(statusStart);
+        const size_t statusStart = markerPos + std::strlen(kStatusMarker);
 
         try
         {
-            response.statusCode = std::stol(statusText);
+            response.statusCode = std::stol(output.substr(statusStart));
         }
         catch (...)
         {
@@ -59,13 +60,15 @@ HttpResponse HttpClient::Get(const std::string& url)
         }
 
         output.erase(markerPos);
-
-        while (!output.empty() && (output.back() == '\n' || output.back() == '\r'))
-            output.pop_back();
     }
 
     response.body = std::move(output);
-    response.success = (exitCode == 0 && response.statusCode >= 200 && response.statusCode < 400 && !response.body.empty());
+
+    response.success =
+        (exitCode == 0 &&
+         response.statusCode >= 200 &&
+         response.statusCode < 400 &&
+         !response.body.empty());
 
     if (!response.success)
     {
@@ -76,7 +79,7 @@ HttpResponse HttpClient::Get(const std::string& url)
         else if (response.body.empty())
             response.errorMessage = "Empty HTTP body";
         else
-            response.errorMessage = "HTTP status " + std::to_string(response.statusCode);
+            response.errorMessage = "HTTP " + std::to_string(response.statusCode);
     }
 
     return response;
