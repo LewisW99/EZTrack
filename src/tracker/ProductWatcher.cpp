@@ -14,6 +14,7 @@
 #include <sstream>
 #include <thread>
 #include <vector>
+#include <mutex>
 
 #include "../core/Logger.h"
 #include "../http/HttpClient.h"
@@ -25,6 +26,7 @@ using json = nlohmann::json;
 namespace
 {
     std::atomic<bool> g_shouldStop = false;
+    std::mutex g_productMutex; // 🔥 FIX: protect shared product state
 
     std::filesystem::path g_logsPath = "logs";
     std::filesystem::path g_statusPath = "status";
@@ -66,10 +68,7 @@ namespace
                 result += '-';
         }
 
-        if (result.empty())
-            result = "product";
-
-        return result;
+        return result.empty() ? "product" : result;
     }
 
     bool LoadProducts(const std::string& path, std::vector<Product>& products, Logger& logger)
@@ -94,7 +93,6 @@ namespace
             product.name = item["name"];
             product.url = item["url"];
             product.checkIntervalSeconds = item.value("checkInterval", 30);
-
             product.nextCheckAt = std::chrono::steady_clock::now();
 
             products.push_back(product);
@@ -107,10 +105,8 @@ namespace
     {
         std::ofstream file(g_debugPath / (Slugify(product.name) + "-last.html"));
 
-        if (!file.is_open())
-            return;
-
-        file << response.body;
+        if (file.is_open())
+            file << response.body;
     }
 
     void WriteStatus(const std::vector<Product>& products)
@@ -140,41 +136,48 @@ namespace
         file << status.dump(4);
     }
 
-    DetectionResult CheckProduct(Product& product, Logger& logger, Database& db)
+    void ProcessProduct(Product& product, Logger& logger, Database& db)
     {
+        // 🔥 ENABLED CHECK
+        if (!product.enabled)
+            return;
+
         logger.Info("Checking '" + product.name + "'");
 
         HttpResponse response = HttpClient::Get(product.url);
 
-        product.lastChecked = std::time(nullptr);
+        DetectionResult detection = StockDetector::Detect(product.url, response);
+
+        {
+            std::lock_guard<std::mutex> lock(g_productMutex);
+
+            product.lastChecked = std::time(nullptr);
+            product.lastStatus = detection.statusText;
+
+            if (detection.state == StockState::InStock)
+            {
+                bool wasKnown = product.hasKnownState;
+                bool previousState = product.inStock;
+
+                product.inStock = true;
+                product.hasKnownState = true;
+
+                if (wasKnown && !previousState)
+                    NotificationManager::SendStockAlert(product.name);
+            }
+            else if (detection.state == StockState::OutOfStock)
+            {
+                product.inStock = false;
+                product.hasKnownState = true;
+            }
+        }
 
         DumpDebugBody(product, response);
 
-        DetectionResult detection = StockDetector::Detect(product.url, response);
-
-        product.lastStatus = detection.statusText;
-
         logger.Info("HTTP " + std::to_string(response.statusCode) +
-            ", body bytes=" + std::to_string(response.body.size()));
+            ", bytes=" + std::to_string(response.body.size()));
 
         logger.Info("Detection: " + detection.statusText + " (" + detection.reason + ")");
-
-        if (detection.state == StockState::InStock)
-        {
-            bool wasKnown = product.hasKnownState;
-            bool previousState = product.inStock;
-
-            product.inStock = true;
-            product.hasKnownState = true;
-
-            if (wasKnown && !previousState)
-                NotificationManager::SendStockAlert(product.name);
-        }
-        else if (detection.state == StockState::OutOfStock)
-        {
-            product.inStock = false;
-            product.hasKnownState = true;
-        }
 
         db.RecordCheck(
             product.name,
@@ -184,7 +187,21 @@ namespace
             detection.reason
         );
 
-        return detection;
+        //  scheduling AFTER detection
+        auto now = std::chrono::steady_clock::now();
+
+        std::lock_guard<std::mutex> lock(g_productMutex);
+
+        if (detection.state == StockState::Blocked)
+        {
+            logger.Warn("Blocked: '" + product.name + "' backing off 10 mins");
+            product.nextCheckAt = now + std::chrono::minutes(10);
+        }
+        else
+        {
+            product.nextCheckAt =
+                now + std::chrono::seconds(product.checkIntervalSeconds);
+        }
     }
 }
 
@@ -197,15 +214,12 @@ void ProductWatcher::Start()
     std::filesystem::create_directories(g_debugPath);
 
     Logger logger((g_logsPath / "tracker.log").string());
-
     logger.Info("Tracker starting");
 
     Database db("tracker.db");
 
     if (!db.Init())
-    {
         logger.Error("Failed to initialise SQLite database");
-    }
 
     WorkerPool pool(4);
 
@@ -221,45 +235,29 @@ void ProductWatcher::Start()
     while (!g_shouldStop)
     {
         auto now = std::chrono::steady_clock::now();
-        bool scheduledAnything = false;
+        bool scheduled = false;
 
         for (auto& product : products)
         {
             if (now < product.nextCheckAt)
                 continue;
 
-            scheduledAnything = true;
+            scheduled = true;
 
             pool.Enqueue([&product, &logger, &db]()
             {
-                DetectionResult detection = CheckProduct(product, logger, db);
-
-                auto nowTime = std::chrono::steady_clock::now();
-
-                if (detection.state == StockState::Blocked)
-                {
-                    logger.Warn("Site blocked request for '" + product.name + "' - backing off for 10 minutes");
-
-                    product.nextCheckAt = nowTime + std::chrono::minutes(10);
-                }
-                else
-                {
-                    product.nextCheckAt =
-                        nowTime + std::chrono::seconds(product.checkIntervalSeconds);
-                }
+                ProcessProduct(product, logger, db);
             });
         }
 
-        if (scheduledAnything)
+        if (scheduled)
             WriteStatus(products);
 
         auto nextWake = std::chrono::steady_clock::time_point::max();
 
-        for (const auto& product : products)
-        {
-            if (product.nextCheckAt < nextWake)
-                nextWake = product.nextCheckAt;
-        }
+        for (const auto& p : products)
+            if (p.nextCheckAt < nextWake)
+                nextWake = p.nextCheckAt;
 
         auto nowTime = std::chrono::steady_clock::now();
 
@@ -268,6 +266,5 @@ void ProductWatcher::Start()
     }
 
     logger.Info("Tracker stopping cleanly");
-
     WriteStatus(products);
 }

@@ -4,6 +4,15 @@
 #include <sqlite3.h>
 #include <mutex>
 #include <vector>
+
+struct ProductCheck
+{
+    std::string timestamp;
+    std::string status;
+    long httpStatus;
+    std::string reason;
+};
+
 class Database
 {
 public:
@@ -22,6 +31,14 @@ public:
     );
     
     std::vector<Product> GetProducts();
+    
+    int GetOrCreateProduct(const std::string& name, const std::string& url);
+    bool DeleteProduct(int id);
+    bool UpdateProduct(int id, const std::string& name, const std::string& url);
+    bool SetProductEnabled(int id, bool enabled);
+
+    std::vector<ProductCheck> GetProductHistory(int productId);
+    std::vector<ProductCheck> GetLatestChecks(int limit = 50);
 
 private:
 
@@ -30,10 +47,7 @@ private:
     bool CreateTables();
     bool CreateIndexes();
 
-    int GetOrCreateProduct(
-        const std::string& name,
-        const std::string& url
-    );
+    
 
     std::mutex dbMutex;
 };

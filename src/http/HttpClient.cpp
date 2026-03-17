@@ -14,11 +14,19 @@ HttpResponse HttpClient::Get(const std::string& url)
 
     const std::string command =
         "curl -L -s --max-time 20 --connect-timeout 10 "
-        "-H \"Accept: text/html\" "
-        "-H \"Accept-Language: en-GB,en;q=0.9\" "
+        "--compressed" 
+        "-H \"Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8\" "
+        "-H \"Accept-Language: en-GB,en-US;q=0.9,en;q=0.8\" "
+        "-H \"Cache-Control: no-cache\" "
+        "-H \"Pragma: no-cache\" "
         "-H \"Connection: keep-alive\" "
-        "-A \"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
-        "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36\" "
+        "-H \"Upgrade-Insecure-Requests: 1\" "
+        "-H \"Sec-Fetch-Dest: document\" "
+        "-H \"Sec-Fetch-Mode: navigate\" "
+        "-H \"Sec-Fetch-Site: none\" "
+        "-H \"Sec-Fetch-User: ?1\" "
+        "-A \"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36\" "
         "-w \"\\n" + std::string(kStatusMarker) + "%{http_code}\" \"" + url + "\"";
 
     std::array<char, 4096> buffer{};

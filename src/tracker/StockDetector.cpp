@@ -11,6 +11,12 @@ namespace
 
 DetectionResult StockDetector::Detect(const std::string& url, const HttpResponse& response)
 {
+
+    if (response.statusCode != 200)
+    {
+    return { StockState::Error, "error", "HTTP status: " + std::to_string(response.statusCode) };
+    }
+
     const std::string& body = response.body;
 
     if (body.empty())

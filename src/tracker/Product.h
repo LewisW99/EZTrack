@@ -9,6 +9,7 @@ struct Product
     std::string name;
     std::string url;
     int checkIntervalSeconds = 30;
+    int enabled = 1;
 
     bool hasKnownState = false;
     bool inStock = false;
